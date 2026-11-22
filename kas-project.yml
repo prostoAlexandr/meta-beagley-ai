@@ -7,7 +7,7 @@ target:
   - beagley-lab-image
 
 repos:
-  meta-beagley-labs:
+  meta-beagley-ai:
 
   poky:
     url: "https://git.yoctoproject.org/poky"
