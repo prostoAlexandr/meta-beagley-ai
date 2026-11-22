@@ -9,10 +9,10 @@ SRC_URI = "${SOURCEFORGE_MIRROR}/ninvaders/ninvaders-${PV}.tar.gz"
 SRC_URI[sha256sum] = "bfbc5c378704d9cf5e7fed288dac88859149bee5ed0850175759d310b61fd30b"
 
 DEPENDS = "ncurses" 
-# Флаги компилятора для совместимости со стандартами C23 / GCC 10+ 
+# Compiler flags for compatibility with C23 / GCC 10+ 
 CFLAGS:append = " -std=gnu17 -fcommon" 
 
-# Передаем кросс-компилятор и переменные BitBake в Makefile 
+# Pass the cross compiler and BitBake variables to the Makefile 
 EXTRA_OEMAKE = 'CC="${CC}" CFLAGS="${CFLAGS}" LDFLAGS="${LDFLAGS}"' 
 
 do_install() {
