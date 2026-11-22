@@ -2,9 +2,9 @@ header:
   version: 14
 
 machine: beagley-custom
-distro: poky
+distro: beagley-distro
 target:
-  - beagley-lab-image
+  - beagley-ai-image
 
 repos:
   meta-beagley-ai:

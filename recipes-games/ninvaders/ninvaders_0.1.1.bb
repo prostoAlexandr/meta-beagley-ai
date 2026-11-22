@@ -5,10 +5,7 @@ SECTION = "console/games"
 LICENSE = "GPL-2.0-only"
 LIC_FILES_CHKSUM = "file://nInvaders.c;md5=d3b22b9996b86202cdc58487fc6ad8e1"
 
-SRC_URI = "${SOURCEFORGE_MIRROR}/ninvaders/ninvaders-${PV}.tar.gz \
-           file://0001-Custom-title-for-BeagleY-AI.patch \
-           file://0002-Custom-title-for-BeagleY-AI.patch \
-           "
+SRC_URI = "${SOURCEFORGE_MIRROR}/ninvaders/ninvaders-${PV}.tar.gz"
 SRC_URI[sha256sum] = "bfbc5c378704d9cf5e7fed288dac88859149bee5ed0850175759d310b61fd30b"
 
 DEPENDS = "ncurses" 
