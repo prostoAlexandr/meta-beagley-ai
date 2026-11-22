@@ -1,0 +1,38 @@
+header:
+  version: 14
+
+machine: beagley-custom
+distro: poky
+target:
+  - beagley-lab-image
+
+repos:
+  meta-beagley-labs:
+
+  poky:
+    url: "https://git.yoctoproject.org/poky"
+    refspec: "scarthgap"
+    layers:
+      meta:
+      meta-poky:
+      meta-yocto-bsp:
+
+  meta-openembedded:
+    url: "https://git.openembedded.org/meta-openembedded"
+    refspec: "scarthgap"
+    layers:
+      meta-oe:
+
+  meta-arm:
+    url: "https://git.yoctoproject.org/meta-arm"
+    refspec: "scarthgap"
+    layers:
+      meta-arm:
+      meta-arm-toolchain:
+
+  meta-ti:
+    url: "https://git.yoctoproject.org/meta-ti"
+    refspec: "scarthgap"
+    layers:
+      meta-ti-bsp:
+      meta-beagle:
