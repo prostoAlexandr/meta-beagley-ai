@@ -1,0 +1,23 @@
+From f4398c54ea49c1e169bba65998cdf66a2654c79d Mon Sep 17 00:00:00 2001
+From: Alexandr <asbelikov1@gmail.com>
+Date: Wed, 18 Nov 2026 02:41:57 +0500
+Subject: [PATCH] Custom title for BeagleY-AI
+
+---
+ view.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/view.c b/view.c
+index 3d9af06..db3398b 100644
+--- a/view.c
++++ b/view.c
+@@ -412,8 +412,7 @@ void titleScreenDisplay()
+ 	waddstr(wTitleText, "        ____                 __          ");
+ 	waddstr(wTitleText, "  ___  /  _/__ _  _____  ___/ /__ _______");
+         waddstr(wTitleText, " / _ \\_/ // _ \\ |/ / _ `/ _  / -_) __(_-<");
+-	waddstr(wTitleText, "/_//_/___/_//_/___/\\_,_/\\_,_/\\__/_/ /___/");
+-	waddstr(wTitleText, "BeagleY-AI Edition");
++	waddstr(wTitleText, "BeagleY-AI Edition/\\_,_/\\_,_/\\__/_/ /___/");
+ 
+ 	frame++;
+ 	wAliens = newpad(7, 11);
