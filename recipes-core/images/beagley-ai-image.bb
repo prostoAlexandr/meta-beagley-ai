@@ -12,3 +12,5 @@ IMAGE_INSTALL:append = "\
     kernel-modules \
     ninvaders \
 "
+
+IMAGE_FEATURES += " debug-tweaks"
