@@ -1,0 +1,20 @@
+{
+  // Don't put inotify watches on the Yocto build tree (~475k directories)
+  "files.watcherExclude": {
+    "**/build/**": true
+  },
+  // Optional: hide git-ignored dirs from Explorer
+  "explorer.excludeGitIgnore": false,
+  // Search already skips .gitignore'd paths (default true); shown for clarity
+  "search.useIgnoreFiles": true,
+
+  // kas-cloned layers are separate git repos; don't open them in the
+  // Source Control view, so they are decorated as ignored by this repo
+  "git.autoRepositoryDetection": "subFolders",
+  "git.repositoryScanIgnoredFolders": [
+    "poky",
+    "meta-openembedded",
+    "meta-arm",
+    "meta-ti"
+  ]
+}

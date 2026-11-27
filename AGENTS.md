@@ -48,7 +48,18 @@ documentation or the "Known issues" list up to date.
 | DISTRO | `beagley-distro` (poky + systemd, usrmerge, pam) |
 | Image (kas target) | `beagley-ai-image` (based on core-image-minimal) |
 | Kernel | `linux-bb.org` (bbappend `linux-bb.org_%.bbappend`, fragment `enable-extra-options.cfg`) |
-| Bootloader | U-Boot `bb.org`, SD layout `sdimage-2part-efi.wks.in` (meta-ti default, GRUB EFI) |
+| Bootloader | U-Boot `bb.org` + extlinux on the FAT partition (`extlinux-conf`), SD layout `sdimage-2part.wks` |
+
+## Boot constraints (verified on hardware)
+
+- The TI ROM loads `tiboot3.bin` only from the **active** (MBR boot flag) FAT partition. With the flag moved
+  to the ext4 rootfs the board stays completely silent on UART (no R5 SPL banner).
+- U-Boot bootstd (`bootflow scan`, `boot/bootdev-uclass.c`) scans only active partitions if any exist; the
+  non-active rootfs shows up as state `media`, `err=-22` in `bootflow scan -lae`.
+- Therefore `extlinux.conf`, `Image` and the DTBs must be on the FAT partition (via `IMAGE_BOOT_FILES`).
+  Do not propose putting `extlinux.conf` in the rootfs `/boot` or moving the active flag.
+- Keep the `safe` label in `extlinux.conf`: a failed `fdt_overlay_apply()` may leave the base DTB modified,
+  and an overlay that applies cleanly can still break the console or the SD card in Linux.
 
 ## Build directories
 
@@ -101,6 +112,14 @@ them once fixed.
   `KERNEL_CONFIG_FRAGMENTS:append = " ${WORKDIR}/enable-extra-options.cfg"` to the bbappend and drop
   `CONFIG_INPUT_POLLDEV`. Deferred by the user: do not change it now, but remind them about it the next time
   the kernel is configured or patched.
+- **Kernel and DTBs exist in two copies.** U-Boot boots `Image` and `dtb/ti/*.dtb` from the FAT partition,
+  which wic fills from `DEPLOY_DIR_IMAGE` (`IMAGE_BOOT_FILES`) at image build time. The packages
+  `kernel-image-image` (`MACHINE_ESSENTIAL_EXTRA_RDEPENDS` in meta-ti `k3.inc`) and `kernel-devicetree`
+  (`ti-soc.inc`) also install them into the rootfs `/boot`, which nothing reads at boot. Updating the kernel
+  package on the target (once package management is added to the image) would change only `/boot` and
+  the old kernel would still boot. Deferred by the user to the future system update task: the kernel and
+  DTBs must end up where U-Boot reads them after an update (e.g. package files land on `/boot/firmware`,
+  or an update mechanism writes the FAT partition).
 
 ## Git
 

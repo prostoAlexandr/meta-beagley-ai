@@ -17,6 +17,8 @@ modules, a custom kernel config fragment and a custom recipe.
 | `conf/machine/beagley-custom.conf` | `beagley-custom` machine on top of `beagley-ai` from `meta-beagle` |
 | `conf/machine/beagley-custom-k3r5.conf` | companion machine for the R5F core (required by the `k3r5` multiconfig) |
 | `conf/distro/beagley-distro.conf` | `beagley-distro` distribution based on Poky with systemd |
+| `recipes-bsp/extlinux-conf/` | deploy-only recipe with the U-Boot `extlinux.conf` (boot menu, kernel, DTB, overlays) |
+| `recipes-core/base-files/` | `bbappend` for `base-files`: distro `motd` banner and machine-specific `fstab` |
 | `recipes-core/images/beagley-ai-image.bb` | `beagley-ai-image` image based on `core-image-minimal` |
 | `recipes-games/ninvaders/` | nInvaders 0.1.1 recipe |
 | `recipes-kernel/linux/` | `bbappend` for `linux-bb.org` with a kernel config fragment |
@@ -32,17 +34,55 @@ modules, a custom kernel config fragment and a custom recipe.
 ### Machine `beagley-custom`
 
 - `require conf/machine/beagley-ai.conf` — inherits all BeagleY-AI hardware settings from
-  `meta-ti/meta-beagle` (U-Boot, TF-A, OP-TEE, device trees, the default
-  `sdimage-2part-efi.wks.in` SD card layout with GRUB EFI).
+  `meta-ti/meta-beagle` (U-Boot, TF-A, OP-TEE, device trees).
 - `IMAGE_FSTYPES += "tar.xz wic"` — `tar.xz` for NFS root, `wic` for writing to an SD card
   (`wic.xz` and `wic.bmap` are already added by meta-ti's `k3.inc`).
 - `PREFERRED_PROVIDER_virtual/kernel ?= "linux-bb.org"` — the BeagleBoard.org kernel (6.12).
 - `MACHINE_FEATURES:append = " usbhost vfat serial"`.
+- `MACHINE_FEATURES:remove = "efi"` — drops GRUB EFI. Without `efi`, meta-ti's `k3.inc` selects
+  the `sdimage-2part.wks` SD card layout, and `packagegroup-core-boot` no longer installs `grub-efi`.
+- `IMAGE_BOOT_FILES:append` — besides the bootloaders, puts `Image`,
+  `dtb/ti/k3-am67a-beagley-ai.dtb` and `extlinux/extlinux.conf` on the FAT boot partition.
+- `do_image_wic[depends] += "extlinux-conf:do_deploy"` — `extlinux.conf` is not a package, so the
+  wic image depends on its deploy task explicitly.
 
 **Why `beagley-custom-k3r5.conf` exists:** K3 platforms in meta-ti are built with the `k3r5`
 multiconfig (R5 SPL / `tiboot3.bin`). The multiconfig derives the machine name as
 `${MACHINE}-k3r5`, so `beagley-custom` requires a matching `beagley-custom-k3r5` machine.
 It simply includes `beagley-ai-k3r5.conf`. The R5 part is built in `build/tmp-k3r5`.
+
+### Boot flow
+
+The SD card has two MBR partitions (`sdimage-2part.wks` from meta-ti):
+
+| Partition | Content |
+|---|---|
+| `mmcblk1p1`, FAT, `boot`, **active** | `tiboot3.bin`, `tispl.bin`, `u-boot.img`, `Image`, `dtb/ti/*.dtb(o)`, `extlinux/extlinux.conf` |
+| `mmcblk1p2`, ext4, `root` | root filesystem |
+
+Boot sequence: ROM → `tiboot3.bin` (R5 SPL) → `tispl.bin` (A53 SPL, TF-A, OP-TEE) → `u-boot.img` →
+`bootflow scan` → `/extlinux/extlinux.conf` → Linux.
+
+- The ROM loads `tiboot3.bin` from the **active** FAT partition, so the active flag must stay there.
+- U-Boot bootstd scans only active partitions when one exists. This is why `extlinux.conf`, the kernel
+  and the DTBs live on the FAT partition, not in the rootfs `/boot`.
+- `extlinux.conf` (from `recipes-bsp/extlinux-conf/files/`) shows a boot menu with a 3 s timeout:
+  - `beagley` (default) — base DTB plus the overlays listed in `FDTOVERLAYS`;
+  - `safe` — base DTB only; a fallback for an overlay or a config edit that breaks boot.
+  Paths in the file are relative to `/extlinux/`.
+- The machine-specific `fstab` (`recipes-core/base-files/files/beagley-custom/fstab`) mounts the FAT
+  partition at `/boot/firmware`. This allows editing `extlinux.conf` on the board.
+
+Enabling an overlay on the board (the full set of overlays is installed in the rootfs `/boot/dtb/ti/`):
+
+```sh
+cp /boot/dtb/ti/k3-am67a-beagley-ai-spidev0.dtbo /boot/firmware/dtb/ti/
+vi /boot/firmware/extlinux/extlinux.conf    # FDTOVERLAYS ../dtb/ti/k3-am67a-beagley-ai-spidev0.dtbo
+sync && reboot
+```
+
+Changes made on the board are lost when the SD card is reflashed. Copy the ones worth keeping into
+`recipes-bsp/extlinux-conf/files/extlinux.conf`.
 
 ### Distro `beagley-distro`
 
@@ -127,6 +167,7 @@ beagley-ai-image-beagley-custom.rootfs.tar.xz    # rootfs for NFS
 beagley-ai-image-beagley-custom.rootfs.manifest  # list of installed packages
 tiboot3.bin, tispl.bin, u-boot.img               # bootloaders (R5 SPL, A53 SPL + TF-A/OP-TEE, U-Boot)
 Image, fitImage, *.dtb, *.dtbo                   # kernel and device trees
+extlinux.conf                                    # U-Boot boot menu (from extlinux-conf)
 modules-beagley-custom.tgz                       # kernel modules
 ```
 
