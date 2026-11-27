@@ -10,7 +10,7 @@ It is a learning project: a minimal systemd image plus custom recipes, bbappends
 
 A detailed description of the contents is in `README.md`. When recipes, machines or dependencies
 change, propose updates to it to the user. `README.md` describes the layer only — do not put
-known issues or TODOs there; track them in this file.
+known issues or TODOs there; track them in `labs/planned_labs.md` (see "Known issues" below).
 
 ## Rules for AI agents
 
@@ -29,8 +29,10 @@ documentation or the "Known issues" list up to date.
 
 ## Layout
 
-- Tracked by git: `conf/`, `recipes-*/`, `kas-project*.yml`, `README.md`, `AGENTS.md`, `COPYING.MIT`.
-- **Not tracked** (`.gitignore`) and must not be edited or committed:
+- Tracked by git: `conf/`, `recipes-*/`, `labs/`, `kas-project*.yml`, `README.md`, `AGENTS.md`, `COPYING.MIT`.
+- `labs/` holds the user's lab write-ups (`labN_<name>.md`, in English), `planned_labs.md` (future labs and
+  known issues) and `yocto_glossary.md` (the variables used in the layer and the labs, by category). It is
+  documentation only; BitBake does not parse it. See "Lab workflow" below.- **Not tracked** (`.gitignore`) and must not be edited or committed:
   `build/`, `poky/`, `meta-openembedded/`, `meta-arm/`, `meta-ti/` — these are cloned by kas.
   Reading them for reference is fine and encouraged (e.g. `meta-ti/meta-beagle/conf/machine/beagley-ai.conf`,
   `meta-ti/meta-ti-bsp/conf/machine/include/k3.inc`, `meta-ti/meta-ti-bsp/conf/multiconfig/k3r5.conf`).
@@ -102,24 +104,60 @@ read `build/deploy-ti/images/beagley-custom/beagley-ai-image-beagley-custom.root
 
 ## Known issues
 
-Propose items for this list (not for `README.md`) to the user when you find problems, and propose removing
-them once fixed.
+Known issues and deferred work are tracked as planned labs in **`labs/planned_labs.md`**. Read it before
+working on the repository. Propose new items for it (not for `README.md`) to the user when you find problems,
+and propose removing them once fixed.
 
-- **Kernel config fragment is not applied.** `linux-bb.org_%.bbappend` adds `enable-extra-options.cfg` to
-  `SRC_URI`, but the meta-ti `setup-defconfig.inc` merges only the files listed in `KERNEL_CONFIG_FRAGMENTS`,
-  which is not set. `I2C_CHARDEV` and `DYNAMIC_DEBUG` are enabled only because `bb.org_defconfig` already sets
-  them; `INPUT_POLLDEV` no longer exists in the 6.12 kernel. Fix: add
-  `KERNEL_CONFIG_FRAGMENTS:append = " ${WORKDIR}/enable-extra-options.cfg"` to the bbappend and drop
-  `CONFIG_INPUT_POLLDEV`. Deferred by the user: do not change it now, but remind them about it the next time
-  the kernel is configured or patched.
-- **Kernel and DTBs exist in two copies.** U-Boot boots `Image` and `dtb/ti/*.dtb` from the FAT partition,
-  which wic fills from `DEPLOY_DIR_IMAGE` (`IMAGE_BOOT_FILES`) at image build time. The packages
-  `kernel-image-image` (`MACHINE_ESSENTIAL_EXTRA_RDEPENDS` in meta-ti `k3.inc`) and `kernel-devicetree`
-  (`ti-soc.inc`) also install them into the rootfs `/boot`, which nothing reads at boot. Updating the kernel
-  package on the target (once package management is added to the image) would change only `/boot` and
-  the old kernel would still boot. Deferred by the user to the future system update task: the kernel and
-  DTBs must end up where U-Boot reads them after an update (e.g. package files land on `/boot/firmware`,
-  or an update mechanism writes the FAT partition).
+Current known issues (details in `labs/planned_labs.md`):
+
+- **Kernel config fragment is not applied** (`KERNEL_CONFIG_FRAGMENTS` is not set in the kernel bbappend).
+  Deferred by the user: do not change it now, but remind them about it the next time the kernel is configured
+  or patched.
+- **Kernel and DTBs exist in two copies** (FAT partition and rootfs `/boot`). Deferred to the system update lab.
+
+## Lab workflow
+
+The user works through the project as a series of labs. A lab is started and finished by the user's own words;
+those words are the explicit request (rule 1) to create and update **that lab's file only**. Everything else in
+the repository still follows the rules above: explain as a mini lab and change other files only when asked.
+
+**Start** — the user says they are starting a new lab (e.g. "today we do a new lab", "сегодня делаем новую
+лабораторную"):
+
+1. Take the next number: the highest `N` of `labs/labN_*.md` plus one.
+2. Agree on the topic. If it is in `labs/planned_labs.md`, use that entry (goal, plan, "done when") as the base.
+3. Create `labs/labN_<short_snake_case_name>.md` in English with:
+   - a `> Status: in progress` line at the top;
+   - a short intro, `# Lab No. N: <Title>`, `### Objectives`;
+   - `### Plan`: the numbered steps the user will execute, with commands where they are known;
+   - `## Working notes` at the end (empty at the start).
+4. Show the plan to the user and wait for them to start.
+
+**During the lab** — keep the lab context in the file, not only in the conversation, so the lab survives a new
+session or a context compaction:
+
+- After each meaningful event, append a short entry to `## Working notes`: a step done, an error (exact message),
+  a cause found, a new input or requirement from the user, a decision, a change of plan.
+- Update `### Plan` when the plan changes.
+- Do **not** touch `labs/yocto_glossary.md` during the lab. Variables tried while prototyping or experimenting
+  may be dropped when the user rolls back and takes another path.
+- At the start of a session, if a lab file has `> Status: in progress`, read it before answering.
+- Still answer as a mini lab (rule 3): explain, and let the user make the changes in the repository.
+
+**Finish** — the user says the lab is finished:
+
+1. Give the user a recap in the chat: what was done, what broke and how it was fixed, what is left open.
+2. Compact the lab file into its final form, in the style of the existing labs (`lab1`–`lab10`): intro, title,
+   objectives, short theory, numbered steps with the commands as they actually worked, a short section only for
+   the instructive dead ends, and a closing `🎯` summary. Remove `> Status` and `## Working notes`.
+   Aim for the size of the other labs (about 150–200 lines).
+3. Update `labs/yocto_glossary.md` with the variables **actually used** in this lab: only those that appear in
+   the final steps of the compacted lab file or in the final state of the repository. Skip variables from
+   abandoned attempts and dead ends, and skip ones already in the glossary (update their "How we use it" if the
+   lab changed it). Put each into the right category with a one-line purpose and its use in our layer.
+4. Propose changes to `labs/planned_labs.md`: remove the finished entry, add follow-ups and unfinished parts,
+   propose removing known issues that were fixed. Propose `README.md` / `AGENTS.md` updates as usual.
+5. Do not commit; the user commits.
 
 ## Git
 
