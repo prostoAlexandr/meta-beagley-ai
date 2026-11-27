@@ -91,6 +91,7 @@ To see the final value of any variable and where it was set, use `bitbake-getvar
 |---|---|---|
 | `IMAGE_INSTALL` | Packages installed into the rootfs | `:append` with `dropbear`, `openssh-sftp-server`, `kernel-modules`, `ninvaders` |
 | `IMAGE_FEATURES` | Named feature sets of the image | `debug-tweaks`: root login without a password |
+| `IMAGE_OVERHEAD_FACTOR` | Multiplier for the rootfs size when the ext4 image/partition is created | Poky default; a smaller rootfs gives a smaller partition (Lab 11) |
 
 ---
 
@@ -112,7 +113,7 @@ To see the final value of any variable and where it was set, use `bitbake-getvar
 
 | Variable | What it is for | How we use it |
 |---|---|---|
-| `SRC_URI` | What to fetch: archives, git, local `file://` | nInvaders tarball; `file://extlinux.conf`; `file://enable-extra-options.cfg` via `:append` |
+| `SRC_URI` | What to fetch: archives, git, local `file://` | nInvaders tarball; `file://extlinux.conf`; `file://enable-extra-options.cfg` and `file://disable-unused.cfg` via `:append` |
 | `SRC_URI[sha256sum]` | Checksum of a downloaded archive | nInvaders tarball |
 | `SOURCEFORGE_MIRROR` | Base URL of the SourceForge downloads | nInvaders `SRC_URI` |
 | `THISDIR` | Directory of the file being parsed | `${THISDIR}/files` in the bbappends |
@@ -126,7 +127,7 @@ To see the final value of any variable and where it was set, use `bitbake-getvar
 
 | Variable | What it is for | How we use it |
 |---|---|---|
-| `WORKDIR` | Work directory of a recipe in `tmp/work/` | where `file://` sources are unpacked; source of `extlinux.conf` in `do_deploy` |
+| `WORKDIR` | Work directory of a recipe in `tmp/work/` | where `file://` sources are unpacked; source of `extlinux.conf` in `do_deploy`; kernel fragments as `${WORKDIR}/*.cfg` in `KERNEL_CONFIG_FRAGMENTS` |
 | `S` | Unpacked source directory | `${WORKDIR}` for `extlinux-conf`; `ninvaders-0.1.1/` for nInvaders |
 | `B` | Build directory (objects) | kernel `.config` in `build/` (Lab 5) |
 | `D` | Install destination, packaged afterwards (`image/` in `WORKDIR`) | `${D}${bindir}` in nInvaders `do_install` |
@@ -156,6 +157,8 @@ To see the final value of any variable and where it was set, use `bitbake-getvar
 | `do_deploy` (`inherit deploy`) | Put files into `DEPLOY_DIR_IMAGE`, outside the rootfs | `extlinux-conf`: file goes to the FAT partition, not to the rootfs |
 | `addtask` | Add a task to the task graph | `addtask deploy after do_compile before do_build` |
 | `do_image_wic[depends]` | Extra dependency of the wic image task | `+= "extlinux-conf:do_deploy"` because `extlinux-conf` is not an image package |
+| `do_configure` (kernel) | Creates the kernel `.config` | for `linux-bb.org` the meta-ti version in `setup-defconfig.inc`: defconfig + `merge_config.sh -m`; `bitbake -c configure [-f] virtual/kernel` checks fragments in seconds (Lab 11) |
+| `do_menuconfig` / `do_diffconfig` | Interactive Kconfig menu / write the changes since `menuconfig` to `${WORKDIR}/fragment.cfg` (`cml1.bbclass`) | needs a tmux shell in the container; source of exact option names for a fragment (Lab 11) |
 
 ---
 
@@ -163,10 +166,14 @@ To see the final value of any variable and where it was set, use `bitbake-getvar
 
 | Name | What it is for | How we use it |
 |---|---|---|
-| `KERNEL_CONFIG_FRAGMENTS` | meta-ti list of `.cfg` fragments merged into `.config` (`setup-defconfig.inc`) | **not set yet** (known issue): our fragment is fetched but not merged |
-| `CONFIG_I2C_CHARDEV` | `/dev/i2c-*` for user space | in our fragment; already enabled by `bb.org_defconfig` |
-| `CONFIG_DYNAMIC_DEBUG` | Runtime-switchable kernel debug messages | in our fragment; already enabled by `bb.org_defconfig` |
-| `CONFIG_INPUT_POLLDEV` | Obsolete input polling helper | still in our fragment, **does not exist** in 6.12 |
+| `KERNEL_CONFIG_FRAGMENTS` | meta-ti list of `.cfg` fragments merged into `.config` by `merge_config.sh` (`setup-defconfig.inc`); `SRC_URI` alone only fetches them | `${WORKDIR}/enable-extra-options.cfg` and `${WORKDIR}/disable-unused.cfg` (Lab 11) |
+| `KERNEL_LOCALVERSION` | Suffix passed to the kernel build, added after `CONFIG_LOCALVERSION` | `-ti` from `setup-defconfig.inc`; gives `6.12.57-beagley-ti` |
+| `CONFIG_I2C_CHARDEV` | `/dev/i2c-*` for user space | in `enable-extra-options.cfg`; also enabled by `bb.org_defconfig` |
+| `CONFIG_DYNAMIC_DEBUG` | Runtime-switchable kernel debug messages | in `enable-extra-options.cfg`; also enabled by `bb.org_defconfig` |
+| `CONFIG_LOCALVERSION` | String appended to the kernel release (`uname -r`, `/lib/modules/<release>`) | `-beagley` in `enable-extra-options.cfg`: proves the fragment is applied (Lab 11) |
+| `CONFIG_IKCONFIG_PROC` | Kernel configuration readable at `/proc/config.gz` | from `bb.org_defconfig`; checks the configuration on the board |
+| `CONFIG_MEDIA_SUPPORT_FILTER` | Makes the `MEDIA_*_SUPPORT` options selectable; without it they are forced on | `=y` in `disable-unused.cfg` to drop TV, radio and SDR (Lab 11) |
+| `# CONFIG_X is not set` | Fragment syntax that disables an option | 100 lines in `disable-unused.cfg`; a line for an option without a prompt is dropped silently (Lab 11) |
 | `CONFIG_ROOT_NFS`, `CONFIG_IP_PNP` | Root filesystem over NFS, kernel IP configuration | built in; needed for NFS root (Lab 2) |
 | `CONFIG_VFAT_FS` | FAT filesystem | built in; mounts `/boot/firmware` (Lab 10) |
 

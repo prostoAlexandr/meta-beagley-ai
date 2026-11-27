@@ -100,27 +100,11 @@ The list has two parts:
 
 # Features and fixes
 
-## Kernel configuration with config fragments
-
-**Goal:** make the kernel config fragment of the layer actually apply and learn how the meta-ti kernel configuration works.
-
-**Background (known issue):** `recipes-kernel/linux/linux-bb.org_%.bbappend` adds `enable-extra-options.cfg` to `SRC_URI`, but `meta-ti-bsp/recipes-kernel/linux/setup-defconfig.inc` merges only the files listed in `KERNEL_CONFIG_FRAGMENTS`, which is not set. `I2C_CHARDEV` and `DYNAMIC_DEBUG` are enabled only because `bb.org_defconfig` already sets them, and `INPUT_POLLDEV` no longer exists in the 6.12 kernel. Lab 5 already describes the correct way; the repository is not fixed yet.
-
-**Plan:**
-- Add `KERNEL_CONFIG_FRAGMENTS:append = " ${WORKDIR}/enable-extra-options.cfg"` to the bbappend and drop `CONFIG_INPUT_POLLDEV`.
-- Enable an option that is **disabled** in `bb.org_defconfig`, so that the check proves the fragment was merged.
-- Read the `merge_config.sh` output in `temp/log.do_configure`.
-- Use `bitbake -c menuconfig virtual/kernel` and `bitbake -c diffconfig virtual/kernel` to create a fragment instead of writing it by hand.
-
-**Done when:** the new option is in `build/.config` of the kernel and is visible on the board (`/proc/config.gz` or the feature itself).
-
----
-
 ## System updates and the duplicated kernel / DTBs
 
 **Goal:** update the system on the board with a package manager, so that the updated kernel and DTBs are the ones that boot.
 
-**Background (known issue):** the kernel and DTBs exist in two copies. U-Boot boots `Image` and `dtb/ti/*.dtb` from the FAT partition, which wic fills from `DEPLOY_DIR_IMAGE` (`IMAGE_BOOT_FILES`) at image build time. The packages `kernel-image-image` (`MACHINE_ESSENTIAL_EXTRA_RDEPENDS` in meta-ti `k3.inc`) and `kernel-devicetree` (`ti-soc.inc`) also install them into the rootfs `/boot`, which nothing reads at boot. Updating the kernel package on the target would change only `/boot`, and the old kernel would still boot.
+**Background (known issue):** the kernel and DTBs exist in two copies. U-Boot boots `Image` and `dtb/ti/*.dtb` from the FAT partition, which wic fills from `DEPLOY_DIR_IMAGE` (`IMAGE_BOOT_FILES`) at image build time. The packages `kernel-image-image` (`MACHINE_ESSENTIAL_EXTRA_RDEPENDS` in meta-ti `k3.inc`) and `kernel-devicetree` (`ti-soc.inc`) also install them into the rootfs `/boot`, which nothing reads at boot. Updating the kernel package on the target would change only `/boot`, and the old kernel would still boot. Since Lab 11 trimmed the modules, this `/boot` copy (47 MiB) is the largest part of the rootfs (139 MiB).
 
 **Plan:**
 - Add `package-management` to `IMAGE_FEATURES`, pick the package format (`PACKAGE_CLASSES`) and serve a package feed from the host.
@@ -129,6 +113,43 @@ The list has two parts:
 - Optional follow-up: look at full-image A/B updates (SWUpdate, RAUC, Mender).
 
 **Done when:** after a kernel package update on the board, `uname -a` shows the new kernel after a reboot, and there is only one copy of the kernel and DTBs.
+
+---
+
+## Updating the kernel version
+
+**Goal:** move from the 6.12 kernel to a newer one, and learn how Yocto selects the kernel version and what a kernel update can break, the Device Tree first of all.
+
+**Background:** the kernel is chosen in steps: `TI_PREFERRED_BSP` (`bb_org-6_12` in meta-beagle `beagle-bsp.inc`) sets `BSP_KERNEL_PROVIDER` / `BSP_KERNEL_VERSION` (and the U-Boot and GPU driver versions), which become `PREFERRED_PROVIDER_virtual/kernel` and `PREFERRED_VERSION`; our machine sets `PREFERRED_PROVIDER_virtual/kernel ?= "linux-bb.org"`. What we found (checked 2026-11-28):
+
+* **Our kernel is TI's kernel plus BeagleBoard.org patches.** `linux-bb.org` 6.12.57, branch `v6.12.57-ti-arm64-r64` of `github.com/beagleboard/linux`, is TI's `ti-linux-6.12.y` (TI SDK 11.02.13, with the stable `v6.12.57` merged) plus about 30 BeagleBoard.org commits: the board DTS and 32 BeagleY-AI overlays (BeagleBoard-DeviceTrees), `bb.org_defconfig`, wireless-regdb, `tps65219` (PMIC) backports, crypto fixes from 6.12.84, and drivers we do not use (Coral `gasket`, imx708 camera, `mspm0`, overlay configfs, binder/ashmem). The newest branch there is `r65`; there is no 6.18 branch.
+* **meta-ti `scarthgap`** (our branch): only 6.6 and 6.12, for `linux-bb.org` and TI's `linux-ti-staging`.
+* **meta-ti `wrynose` / `master`** (newer Yocto releases, `LAYERSERIES_COMPAT` `whinlatter wrynose`): the same board has two machines. `beagley-ai-ti.conf` describes the board (`j722s.inc`, U-Boot `am67a_beagley_ai_a53_defconfig`, all `ti/k3-am67a*` DTBs) and uses TI's BSP: `linux-ti-staging` **6.18.63** and `u-boot-ti-staging` 2026.01. `beagley-ai.conf` = `beagley-ai-ti.conf` + `beagle-bsp.inc`, and stays on `linux-bb.org` **6.12**. So a Yocto update alone does not bring 6.18.
+* **The Device Tree comes with the kernel source, so it changes with the kernel.** Mainline v6.18 `k3-am67a-beagley-ai.dts` has 402 lines and no BeagleY-AI overlays; it enables only Ethernet, the console UART, the PMIC I2C, the SD card and GPIO1. Our bb.org DTS (946 lines) also enables USB, PCIe, Wi-Fi/Bluetooth (CC33xx on `sdhci2`), HDMI (`dss1`), audio (`mcasp1`), the fan (`cooling-maps`), I2C1/GPIO0 of the 40-pin header and more UARTs. What TI's own 6.18 tree adds for the BeagleY-AI is **not checked yet** (git.ti.com was not reachable).
+* **A newer Yocto release breaks our layer:** files from `SRC_URI` are unpacked into `UNPACKDIR`, not `WORKDIR` (meta-ti `wrynose` already uses `S = "${UNPACKDIR}/..."`). We hard-code `${WORKDIR}` in `linux-bb.org_%.bbappend` (both fragments) and in `extlinux-conf_1.0.bb`.
+
+**How the Device Tree can break on a new kernel:** the DTB format (FDT) is stable, so any kernel parses any DTB. What can differ is the meaning, the bindings: a driver finds its node by `compatible` and reads the properties described in `Documentation/devicetree/bindings/`. Mainline keeps old DTBs working ("DT is ABI", `Documentation/devicetree/bindings/ABI.rst`), but vendor bindings (`PENDING:`, `FROMLIST:` patches of TI, BeagleBoard.org additions) may change. Symptoms: the device silently does not appear (no driver for the `compatible`), a probe error in `dmesg` (missing or changed property), a device stuck in deferred probe, and in the worst case (power, clocks, pinmux) no SD card or console. Overlays reference labels of the base DTB (`__symbols__`) and fail with `FDT_ERR_NOTFOUND` if a label was renamed, so they must be built from the same base DTS.
+
+The kernel is also tied to our two config fragments (a renamed or removed option is dropped silently, Lab 11), the DTB name and overlays in `extlinux.conf` (Lab 10), the out-of-tree GPU driver (`ti-img-rogue-driver`, version set per BSP) and U-Boot (set per BSP too).
+
+**Plan:**
+- Warm-up, a minor update within 6.12: override `BRANCH` / `SRCREV` in our bbappend to `r65`, read the difference (`git log` between the two tags), rebuild, check. Learn `SRCREV`, `PV`, `AUTOREV` and why a pinned commit keeps the build reproducible.
+- Save the reference on 6.12 for later comparison: `lsmod` (53 modules), the bound drivers (loop from Lab 11), `dmesg`, `ls /sys/bus/*/devices`, and the decompiled DTB on the host (`dtc -I dtb -O dts` of `k3-am67a-beagley-ai.dtb` from `DEPLOY_DIR_IMAGE`; `dtc` is not in the image).
+- Check the TI 6.18 Device Tree before choosing a path: build TI's `k3-am67a-beagley-ai.dtb` (or read it in the TI tree) and compare it with ours: which of USB, PCIe, Wi-Fi/BT, HDMI, audio, fan, 40-pin interfaces are enabled, which overlays exist.
+- Compare the ways to 6.18:
+  - **A.** Stay on scarthgap, backport `linux-ti-staging_6.18.bb` (and what it needs: U-Boot, GPU driver versions) from meta-ti `wrynose` into our layer, switch `PREFERRED_PROVIDER_virtual/kernel` / `TI_PREFERRED_BSP`.
+  - **B.** Mainline (`linux-ti-mainline_git.bb` with a newer `SRCREV`): too little of the board is in the upstream DTS, mostly for comparison.
+  - **C.** First move the project to `wrynose` while staying on `linux-bb.org` 6.12 (kas refspecs, `LAYERSERIES_COMPAT`, `WORKDIR` → `UNPACKDIR`), then switch the machine to `beagley-ai-ti` for 6.18. Probably two labs.
+  - **D.** TI 6.18 kernel with the BeagleY-AI DTS and overlays from BeagleBoard.org ported into it (patch or own DTS in the layer, see "Patching the Device Tree in the kernel").
+- Pick one and build it. Keep a way back: a second `extlinux.conf` label that boots the old 6.12 `Image` and DTB, next to `safe`.
+- Check the Device Tree in three stages:
+  - **Build:** `dtc` errors for renamed labels or header macros in the ported DTS.
+  - **Schema:** `make dtbs_check` (dt-schema) validates our DTB against the YAML bindings of the new kernel and lists unknown or changed properties.
+  - **Board:** `dmesg | grep -i -E 'probe|fail|error'`, `cat /sys/kernel/debug/devices_deferred`, the bound drivers and `lsmod` against the 6.12 reference.
+- Check the rest: the Lab 11 check loop for both fragments (the defconfig changes too: TI uses `defconfig` + `ti_arm64_prune.config` instead of `bb.org_defconfig`), `KERNEL_DEVICETREE` and the DTB path in `extlinux.conf`, the overlays (rebuilt from the new base DTS), the GPU driver build.
+- On the board: `uname -r`, Ethernet, Wi-Fi/Bluetooth, USB, HDMI/audio, the fan.
+
+**Done when:** the board boots the newer kernel from our image with the old one still selectable in the menu, the fragments and the Device Tree are verified (`dtbs_check`, no unexpected deferred devices), and every difference in hardware support against the 6.12 reference is either fixed or documented.
 
 ---
 
@@ -192,7 +213,8 @@ The list has two parts:
 - Measure the boot time: `systemd-analyze`, `systemd-analyze blame`, `systemd-analyze critical-chain`.
 - For each service and module, find the package that installed it (`oe-pkgdata-util find-path`, the rootfs manifest) and the variable that pulled the package in (`bitbake -g`, `bitbake -e`).
 - Decide what stays and why. Write the result as a table: name, purpose, who pulls it in, keep or remove.
-- Remove what is not needed, the Yocto way: `IMAGE_FEATURES`, `DISTRO_FEATURES`, `BAD_RECOMMENDATIONS` / `NO_RECOMMENDATIONS`, `PACKAGE_EXCLUDE`, `SYSTEMD_AUTO_ENABLE` or a systemd preset in a `.bbappend`. Replace `kernel-modules` (all modules) with an explicit list if that makes sense.
+- Remove what is not needed, the Yocto way: `IMAGE_FEATURES`, `DISTRO_FEATURES`, `BAD_RECOMMENDATIONS` / `NO_RECOMMENDATIONS`, `PACKAGE_EXCLUDE`, `SYSTEMD_AUTO_ENABLE` or a systemd preset in a `.bbappend`. Replace `kernel-modules` (all modules) with an explicit list if that makes sense: after Lab 11 the image still installs 2224 modules, and 53 are loaded at boot.
+- Check the hardware that Lab 11 kept but did not test: a USB stick (`USB_STORAGE`), a USB-UART adapter (`USB_SERIAL_*`). Optionally drop more from `disable-unused.cfg` (bonding/team, PPP/SLIP, WireGuard were kept).
 
 **Done when:** every service and module that starts at boot is in the table with a reason, the unneeded ones are gone from the image, and the boot time before and after is recorded.
 
@@ -235,7 +257,7 @@ The plan goes from the foundation (what boots) to the build system on top of it 
 | 5 | Vendor BSP (meta-ti) | Lab 6 (`k3r5`) | Reading the vendor BSP |
 | 6 | System updates | | System updates; then A/B updates |
 | — | Developer tools | Lab 7 (devtool), Lab 8 (SDK) | |
-| — | Kernel and security | Lab 5 | Kernel configuration; TrustZone and OP-TEE; OpenSSH |
+| — | Kernel and security | Lab 5, Lab 11 | Updating the kernel version; TrustZone and OP-TEE; OpenSSH |
 | — | Image content and hardware enablement | | Boot-time services audit; TI firmware and accelerators |
 
 ### How to investigate on your own

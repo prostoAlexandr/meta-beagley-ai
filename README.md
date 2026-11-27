@@ -5,7 +5,7 @@ A custom Yocto BSP/distro layer for the **BeagleY-AI** board (TI AM67A / J722S S
 the layer repository is also the kas project.
 
 The main purpose is educational (lab work): a minimal systemd-based image with SSH, kernel
-modules, a custom kernel config fragment and a custom recipe.
+modules, custom kernel config fragments and a custom recipe.
 
 ## Contents
 
@@ -21,7 +21,7 @@ modules, a custom kernel config fragment and a custom recipe.
 | `recipes-core/base-files/` | `bbappend` for `base-files`: distro `motd` banner and machine-specific `fstab` |
 | `recipes-core/images/beagley-ai-image.bb` | `beagley-ai-image` image based on `core-image-minimal` |
 | `recipes-games/ninvaders/` | nInvaders 0.1.1 recipe |
-| `recipes-kernel/linux/` | `bbappend` for `linux-bb.org` with a kernel config fragment |
+| `recipes-kernel/linux/` | `bbappend` for `linux-bb.org` with kernel config fragments |
 
 ### kas project
 
@@ -102,13 +102,18 @@ Based on `poky.conf`:
 
 ### Kernel (`linux-bb.org_%.bbappend`)
 
-Adds the `files/enable-extra-options.cfg` fragment:
+Adds two config fragments from `files/` to `SRC_URI` and to `KERNEL_CONFIG_FRAGMENTS` (the meta-ti
+`setup-defconfig.inc` merges only the fragments listed there, on top of `bb.org_defconfig`):
 
-```
-CONFIG_INPUT_POLLDEV=y
-CONFIG_I2C_CHARDEV=y      # /dev/i2c-* for user space
-CONFIG_DYNAMIC_DEBUG=y
-```
+- `enable-extra-options.cfg`:
+  ```
+  CONFIG_I2C_CHARDEV=y          # /dev/i2c-* for user space
+  CONFIG_DYNAMIC_DEBUG=y
+  CONFIG_LOCALVERSION="-beagley"  # kernel release 6.12.57-beagley-ti
+  ```
+- `disable-unused.cfg`: disables drivers and features the BeagleY-AI does not have or use (other vendors' Wi-Fi,
+  Ethernet and GPUs, TV tuners, ACPI, raw flash, SATA/UFS, unused file systems and network protocols, ...),
+  grouped with comments. This makes `Image` about 15 % and the installed modules about half smaller.
 
 ### nInvaders
 

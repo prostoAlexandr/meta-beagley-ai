@@ -49,7 +49,7 @@ documentation or the "Known issues" list up to date.
 | Companion R5 machine | `beagley-custom-k3r5` — **required**, the meta-ti `k3r5` multiconfig looks up `${MACHINE}-k3r5` |
 | DISTRO | `beagley-distro` (poky + systemd, usrmerge, pam) |
 | Image (kas target) | `beagley-ai-image` (based on core-image-minimal) |
-| Kernel | `linux-bb.org` (bbappend `linux-bb.org_%.bbappend`, fragment `enable-extra-options.cfg`) |
+| Kernel | `linux-bb.org` (bbappend `linux-bb.org_%.bbappend`, fragments `enable-extra-options.cfg` and `disable-unused.cfg` via `KERNEL_CONFIG_FRAGMENTS`) |
 | Bootloader | U-Boot `bb.org` + extlinux on the FAT partition (`extlinux-conf`), SD layout `sdimage-2part.wks` |
 
 ## Boot constraints (verified on hardware)
@@ -96,6 +96,8 @@ read `build/deploy-ti/images/beagley-custom/beagley-ai-image-beagley-custom.root
 - New recipes go in `recipes-<category>/<name>/<name>_<version>.bb`, local files in `<name>/` or `files/`.
   `layer.conf` only picks up the `recipes-*/*/*.bb(append)` depth.
 - Changes to other layers are made via `.bbappend` here, never by editing `meta-ti/` or `poky/`.
+- Kernel config fragments must be listed in `KERNEL_CONFIG_FRAGMENTS` (`SRC_URI` only fetches them). meta-ti runs
+  `merge_config.sh -m`, which drops rejected values silently: after changing a fragment, check `build/.config`.
 - Source patches use the `git format-patch` format (an `Upstream-Status:` header is preferred).
 - When adding a recipe: `LICENSE` + `LIC_FILES_CHKSUM`, `SRC_URI[sha256sum]`.
 - When changing a dependency refspec, update `kas-project.lock.yml` and the table in `README.md`.
@@ -110,9 +112,6 @@ and propose removing them once fixed.
 
 Current known issues (details in `labs/planned_labs.md`):
 
-- **Kernel config fragment is not applied** (`KERNEL_CONFIG_FRAGMENTS` is not set in the kernel bbappend).
-  Deferred by the user: do not change it now, but remind them about it the next time the kernel is configured
-  or patched.
 - **Kernel and DTBs exist in two copies** (FAT partition and rootfs `/boot`). Deferred to the system update lab.
 
 ## Lab workflow
